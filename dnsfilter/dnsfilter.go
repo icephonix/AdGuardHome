@@ -490,6 +490,8 @@ func (d *Dnsfilter) matchHost(host string, qtype uint16, ctags []string) (Result
 
 	log.Tracef("%d rules matched for host '%s'", len(frules), host)
 
+	var firstHostRule *rules.Rule
+
 	for _, rule := range frules {
 
 		log.Tracef("Found rule for host '%s': '%s'  list_id: %d",
@@ -511,20 +513,35 @@ func (d *Dnsfilter) matchHost(host string, qtype uint16, ctags []string) (Result
 
 		} else if hostRule, ok := rule.(*rules.HostRule); ok {
 
-			res.IP = net.IP{}
 			if qtype == dns.TypeA && hostRule.IP.To4() != nil {
 				// either IPv4 or IPv4-mapped IPv6 address
 				res.IP = hostRule.IP.To4()
+				return res, nil
 
 			} else if qtype == dns.TypeAAAA && hostRule.IP.To4() == nil {
 				res.IP = hostRule.IP
+				return res, nil
 			}
-			return res, nil
+
+			firstHostRule = &rule
 
 		} else {
 			log.Tracef("Rule type is unsupported: '%s'  list_id: %d",
 				rule.Text(), rule.GetFilterListID())
 		}
+	}
+
+	if firstHostRule != nil {
+		// Question Type doesn't match the host rules
+		// Return the first matched host rule, but without IP address
+		res := Result{}
+		res.Reason = FilteredBlackList
+		res.IsFiltered = true
+		rule := *firstHostRule
+		res.FilterID = int64(rule.GetFilterListID())
+		res.Rule = rule.Text()
+		res.IP = net.IP{}
+		return res, nil
 	}
 
 	return Result{}, nil
