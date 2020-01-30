@@ -478,6 +478,8 @@ func (d *Dnsfilter) initFiltering(filters map[int]string) error {
 // matchHost is a low-level way to check only if hostname is filtered by rules, skipping expensive safebrowsing and parental lookups
 func (d *Dnsfilter) matchHost(host string, qtype uint16, ctags []string) (Result, error) {
 	d.engineLock.RLock()
+	// Keep in mind that this lock must be held no just when calling Match()
+	//  but also while using the rules returned by it.
 	defer d.engineLock.RUnlock()
 	if d.filteringEngine == nil {
 		return Result{}, nil
