@@ -483,61 +483,57 @@ func (d *Dnsfilter) matchHost(host string, qtype uint16, ctags []string) (Result
 		return Result{}, nil
 	}
 
-	frules, ok := d.filteringEngine.Match(host, ctags)
+	rr, ok := d.filteringEngine.Match(host, ctags)
 	if !ok {
 		return Result{}, nil
 	}
 
-	log.Tracef("%d rules matched for host '%s'", len(frules), host)
-
-	var firstHostRule *rules.Rule
-
-	for _, rule := range frules {
-
-		log.Tracef("Found rule for host '%s': '%s'  list_id: %d",
-			host, rule.Text(), rule.GetFilterListID())
-
+	if rr.NetworkRule != nil {
+		log.Debug("Filtering: found rule for host '%s': '%s'  list_id: %d",
+			host, rr.NetworkRule.Text(), rr.NetworkRule.GetFilterListID())
 		res := Result{}
+		res.FilterID = int64(rr.NetworkRule.GetFilterListID())
+		res.Rule = rr.NetworkRule.Text()
+
 		res.Reason = FilteredBlackList
 		res.IsFiltered = true
-		res.FilterID = int64(rule.GetFilterListID())
-		res.Rule = rule.Text()
-
-		if netRule, ok := rule.(*rules.NetworkRule); ok {
-
-			if netRule.Whitelist {
-				res.Reason = NotFilteredWhiteList
-				res.IsFiltered = false
-			}
-			return res, nil
-
-		} else if hostRule, ok := rule.(*rules.HostRule); ok {
-
-			if qtype == dns.TypeA && hostRule.IP.To4() != nil {
-				// either IPv4 or IPv4-mapped IPv6 address
-				res.IP = hostRule.IP.To4()
-				return res, nil
-
-			} else if qtype == dns.TypeAAAA && hostRule.IP.To4() == nil {
-				res.IP = hostRule.IP
-				return res, nil
-			}
-
-			firstHostRule = &rule
-
-		} else {
-			log.Tracef("Rule type is unsupported: '%s'  list_id: %d",
-				rule.Text(), rule.GetFilterListID())
+		if rr.NetworkRule.Whitelist {
+			res.Reason = NotFilteredWhiteList
+			res.IsFiltered = false
 		}
+		return res, nil
 	}
 
-	if firstHostRule != nil {
+	if qtype == dns.TypeA && rr.HostRuleV4 != nil {
+		res := Result{}
+		res.FilterID = int64(rr.HostRuleV4.GetFilterListID())
+		res.Rule = rr.HostRuleV4.Text()
+		res.Reason = FilteredBlackList
+		res.IsFiltered = true
+		res.IP = rr.HostRuleV4.IP.To4()
+		return res, nil
+	}
+
+	if qtype == dns.TypeAAAA && rr.HostRuleV6 != nil {
+		res := Result{}
+		res.FilterID = int64(rr.HostRuleV6.GetFilterListID())
+		res.Rule = rr.HostRuleV6.Text()
+		res.Reason = FilteredBlackList
+		res.IsFiltered = true
+		res.IP = rr.HostRuleV6.IP
+		return res, nil
+	}
+
+	if rr.HostRuleV4 != nil || rr.HostRuleV6 != nil {
 		// Question Type doesn't match the host rules
-		// Return the first matched host rule, but without IP address
+		// Return the first matched host rule, but without an IP address
 		res := Result{}
 		res.Reason = FilteredBlackList
 		res.IsFiltered = true
-		rule := *firstHostRule
+		rule := rr.HostRuleV4
+		if rr.HostRuleV4 == nil {
+			rule = rr.HostRuleV6
+		}
 		res.FilterID = int64(rule.GetFilterListID())
 		res.Rule = rule.Text()
 		res.IP = net.IP{}
@@ -598,6 +594,9 @@ func New(c *Config, filters map[int]string) *Dnsfilter {
 	return d
 }
 
+// Start - start the module:
+// . start async filtering initializer goroutine
+// . register web handlers
 func (d *Dnsfilter) Start() {
 	d.filtersInitializerChan = make(chan filtersInitializerParams, 1)
 	go d.filtersInitializer()
