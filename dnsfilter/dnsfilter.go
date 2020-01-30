@@ -506,35 +506,39 @@ func (d *Dnsfilter) matchHost(host string, qtype uint16, ctags []string) (Result
 		return res, nil
 	}
 
-	if qtype == dns.TypeA && rr.HostRuleV4 != nil {
+	if qtype == dns.TypeA && rr.HostRulesV4 != nil {
+		rule := rr.HostRulesV4[0] // note that we process only 1 matched rule
 		res := Result{}
-		res.FilterID = int64(rr.HostRuleV4.GetFilterListID())
-		res.Rule = rr.HostRuleV4.Text()
+		res.FilterID = int64(rule.GetFilterListID())
+		res.Rule = rule.Text()
 		res.Reason = FilteredBlackList
 		res.IsFiltered = true
-		res.IP = rr.HostRuleV4.IP.To4()
+		res.IP = rule.IP.To4()
 		return res, nil
 	}
 
-	if qtype == dns.TypeAAAA && rr.HostRuleV6 != nil {
+	if qtype == dns.TypeAAAA && rr.HostRulesV6 != nil {
+		rule := rr.HostRulesV6[0] // note that we process only 1 matched rule
 		res := Result{}
-		res.FilterID = int64(rr.HostRuleV6.GetFilterListID())
-		res.Rule = rr.HostRuleV6.Text()
+		res.FilterID = int64(rule.GetFilterListID())
+		res.Rule = rule.Text()
 		res.Reason = FilteredBlackList
 		res.IsFiltered = true
-		res.IP = rr.HostRuleV6.IP
+		res.IP = rule.IP
 		return res, nil
 	}
 
-	if rr.HostRuleV4 != nil || rr.HostRuleV6 != nil {
+	if rr.HostRulesV4 != nil || rr.HostRulesV6 != nil {
 		// Question Type doesn't match the host rules
 		// Return the first matched host rule, but without an IP address
 		res := Result{}
 		res.Reason = FilteredBlackList
 		res.IsFiltered = true
-		rule := rr.HostRuleV4
-		if rr.HostRuleV4 == nil {
-			rule = rr.HostRuleV6
+		var rule rules.Rule
+		if rr.HostRulesV4 != nil {
+			rule = rr.HostRulesV4[0]
+		} else if rr.HostRulesV6 != nil {
+			rule = rr.HostRulesV6[0]
 		}
 		res.FilterID = int64(rule.GetFilterListID())
 		res.Rule = rule.Text()
